@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from datetime import datetime
 from db import get_conn
@@ -8,9 +9,16 @@ from fastapi.responses import JSONResponse
 #create the app instance
 app = FastAPI()
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail},
+    )
+
+def check_api_key(x_api_key: str = Header(default=None, alias="X-API-Key")):
+    if x_api_key != os.environ.get("API_KEY") or x_api_key is None:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
 
 class Slot(BaseModel):
     id: str
@@ -35,7 +43,7 @@ async def reset_slots(body: ResetRequest):
         "message": "Done"
         }
 
-@app.get("/slots")
+@app.get("/slots", dependencies=[Depends(check_api_key)])
 async def get_slots(provider: str | None = None):
     with get_conn() as conn:
         rows = conn.execute("""
@@ -68,7 +76,7 @@ class NewBooking(BaseModel):
     name: str
     email: str
 
-@app.post("/bookings", status_code=201)
+@app.post("/bookings", status_code=201, dependencies=[Depends(check_api_key)])
 async def create_booking(body: NewBooking):
     with get_conn() as conn:
         slot = conn.execute(
@@ -103,7 +111,7 @@ async def create_booking(body: NewBooking):
         "created_at": row[0].isoformat(),
     }
 
-@app.get("/bookings/{booking_id}")
+@app.get("/bookings/{booking_id}", dependencies=[Depends(check_api_key)])
 async def get_booking(booking_id: str):
     with get_conn() as conn:
         row = conn.execute(
