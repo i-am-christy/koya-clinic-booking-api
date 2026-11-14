@@ -4,10 +4,15 @@ from pydantic import BaseModel
 from datetime import datetime
 from db import get_conn
 import uuid
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from pathlib import Path
 
 #create the app instance
 app = FastAPI()
+
+@app.get("/app", response_class=HTMLResponse)
+async def booking_page():
+    return (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koya Clinic Booking</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 560px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; font-weight: 500; }
+  input { padding: .5rem; width: 100%; box-sizing: border-box; margin-bottom: .75rem; }
+  button { padding: .4rem .9rem; cursor: pointer; }
+  ul { list-style: none; padding: 0; }
+  li { display: flex; justify-content: space-between; align-items: center; padding: .6rem 0; border-bottom: 1px solid #eee; }
+  #result { margin-top: 1.5rem; white-space: pre-wrap; }
+  .error { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>Book a slot</h1>
+
+<input id="apiKey" type="password" placeholder="API key">
+<button id="load">Load slots</button>
+
+<ul id="slots"></ul>
+<div id="result"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function show(text, isError = false) {
+  $("result").textContent = text;
+  $("result").className = isError ? "error" : "";
+}
+
+async function api(path, options = {}) {
+  const key = $("apiKey").value.trim();
+  if (!key) throw new Error("Enter the API key first.");
+
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      "X-API-Key": key,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${res.status}: ${body.error || JSON.stringify(body)}`);
+  return body;
+}
+
+async function loadSlots() {
+  $("slots").innerHTML = "";
+  show("Loading...");
+  try {
+    const data = await api("/slots");
+    if (!data || !Array.isArray(data.slots)) throw new Error("Unexpected response from /slots");
+
+    const open = data.slots.filter(s => s.available);
+    if (!open.length) return show("No open slots.");
+
+    open.forEach(slot => {
+      const li = document.createElement("li");
+      const label = document.createElement("span");
+      label.textContent = `${slot.provider} at ${slot.start}`;
+
+      const btn = document.createElement("button");
+      btn.textContent = "Book";
+      btn.onclick = () => book(slot);
+
+      li.append(label, btn);
+      $("slots").appendChild(li);
+    });
+    show("");
+  } catch (e) {
+    show(e.message, true);
+  }
+}
+
+async function book(slot) {
+  const name = prompt("Patient name?");
+  if (!name) return;
+  const email = prompt("Patient email?");
+  if (!email) return;
+
+  try {
+    const booking = await api("/bookings", {
+      method: "POST",
+      body: JSON.stringify({ slot_id: slot.id, name: name, email: email })
+    });
+    show(`Booked.\nid: ${booking.id}\nstatus: ${booking.status}`);
+  } catch (e) {
+    show(e.message, true);
+  }
+}
+
+$("load").onclick = loadSlots;
+</script>
+</body>
+</html>
