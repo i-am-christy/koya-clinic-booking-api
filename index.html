@@ -103,6 +103,20 @@
   </section>
 
   <section class="card done hidden" id="doneCard"></section>
+    <section class="card" id="myCard">
+    <h2>Manage my bookings</h2>
+    <label>Email
+      <input id="lookupEmail" type="email" autocomplete="email">
+    </label>
+    <div class="actions" style="justify-content:flex-start">
+      <button type="button" class="secondary" id="lookupBtn">Show my bookings</button>
+    </div>
+    <div id="myBookings" style="margin-top:.75rem"></div>
+    <div class="actions" style="justify-content:center">
+      <button type="button" class="secondary hidden" id="moreBtn">Load more</button>
+    </div>
+    <p class="message" id="myMessage"></p>
+  </section>
 </main>
 
 <script>
@@ -289,6 +303,88 @@ function showDone(booking) {
   card.classList.remove("hidden");
   card.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+let myEmail = "";
+let myCursor = null;
+
+function myMessage(text, isError = true) {
+  const m = $("myMessage");
+  m.textContent = text;
+  m.className = "message " + (isError ? "error" : "");
+}
+
+function renderMyBooking(b) {
+  const row = el("div", "slot");
+  const info = el("div");
+  // The booking only stores slot_id, so look up the time from the slots we already loaded
+  const slot = slots.find(s => s.id === b.slot_id);
+  const when = slot ? `${fullTime(slot.start)} with ${slot.provider}` : `Slot ${b.slot_id}`;
+  info.append(
+    el("strong", "", b.status === "cancelled" ? "Cancelled" : "Confirmed"),
+    el("span", "", when)
+  );
+  row.append(info);
+
+  if (b.status === "confirmed") {
+    const btn = el("button", "secondary", "Cancel");
+    btn.onclick = () => cancelBooking(b, btn, row);
+    row.append(btn);
+  }
+  $("myBookings").append(row);
+}
+
+async function lookupBookings(reset) {
+  if (reset) {
+    myEmail = $("lookupEmail").value.trim();
+    if (!myEmail) return myMessage("Enter your email to see your bookings.");
+    myCursor = null;
+    $("myBookings").innerHTML = "";
+  }
+
+  myMessage("Loading...", false);
+  try {
+    const params = new URLSearchParams({ email: myEmail, limit: "5" });
+    if (myCursor) params.set("cursor", myCursor);
+    const data = await api("/bookings?" + params.toString());
+
+    if (reset && data.bookings.length === 0) {
+      myMessage("No bookings found for this email.", false);
+    } else {
+      myMessage("", false);
+    }
+    data.bookings.forEach(renderMyBooking);
+    myCursor = data.next_cursor;
+    $("moreBtn").classList.toggle("hidden", !myCursor);
+  } catch (err) {
+    myMessage(friendlyError(err));
+  }
+}
+
+async function cancelBooking(b, btn, row) {
+  if (!confirm("Cancel this appointment?")) return;
+  btn.disabled = true;
+  try {
+    await api(`/bookings/${encodeURIComponent(b.id)}`, { method: "DELETE" });
+    row.querySelector("strong").textContent = "Cancelled";
+    btn.remove();
+    myMessage("Appointment cancelled. That time is free for others now.", false);
+    await loadSlots(); // refresh so the freed time reappears in the list
+  } catch (err) {
+    if (err.status === 409) {
+      // Already cancelled, so show the real state
+      row.querySelector("strong").textContent = "Cancelled";
+      btn.remove();
+    } else {
+      btn.disabled = false;
+      myMessage(friendlyError(err));
+    }
+  }
+}
+
+$("lookupBtn").onclick = () => lookupBookings(true);
+$("moreBtn").onclick = () => lookupBookings(false);
+$("lookupEmail").addEventListener("keydown", e => {
+  if (e.key === "Enter") { e.preventDefault(); lookupBookings(true); }
+});
 
 loadSlots();
 </script>
